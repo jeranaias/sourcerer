@@ -1,5 +1,7 @@
 # 🔮 Sourcerer
 
+[![CI](https://github.com/jeranaias/sourcerer/actions/workflows/ci.yml/badge.svg)](https://github.com/jeranaias/sourcerer/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 **Ask your documents. Get a cited answer — or an honest "not in the source." And *verify* it.**
 
 Most doc-chat tools always answer, even when the documents don't say anything, and ask you to trust

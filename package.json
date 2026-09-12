@@ -19,5 +19,19 @@
   ],
   "scripts": {
     "test": "node --test"
-  }
+  },
+  "author": "jeranaias",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeranaias/sourcerer.git"
+  },
+  "homepage": "https://github.com/jeranaias/sourcerer#readme",
+  "bugs": "https://github.com/jeranaias/sourcerer/issues",
+  "files": [
+    "src",
+    "example"
+  ]
 }
