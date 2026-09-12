@@ -5,6 +5,19 @@
   "license": "Apache-2.0",
   "type": "module",
   "main": "src/sourcerer.js",
-  "exports": { ".": "./src/sourcerer.js" },
-  "keywords": ["rag", "grounded", "cite-or-refuse", "tutor", "qa", "citations", "llm"]
+  "exports": {
+    ".": "./src/sourcerer.js"
+  },
+  "keywords": [
+    "rag",
+    "grounded",
+    "cite-or-refuse",
+    "tutor",
+    "qa",
+    "citations",
+    "llm"
+  ],
+  "scripts": {
+    "test": "node --test"
+  }
 }

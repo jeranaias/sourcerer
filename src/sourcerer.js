@@ -1,8 +1,9 @@
 // Sourcerer — ask your documents, get a cited answer or an honest "not in the source".
-// Two ways to ground it:
-//   1) point it at a grounding endpoint that returns { text, citations, abstained }
-//   2) hand it an array of passages and it will retrieve + answer, cite-or-refuse, itself
-// Model calls go to any OpenAI-compatible chat endpoint (OpenRouter by default).
+// Ground it three ways: a grounding endpoint, an array of passages, or your own retriever.
+// Optionally verify every answer against its own sources before you trust it.
+import { keywordRetriever } from './retrieve.js';
+import { verifyFaithfulness } from './verify.js';
+
 const ENDPOINT = process.env.SOURCERER_ENDPOINT || 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = process.env.SOURCERER_MODEL || 'google/gemini-3-flash-preview';
 
@@ -21,7 +22,6 @@ async function chat(system, user, timeoutMs = 45000) {
   } catch (e) { return { error: e?.name === 'AbortError' ? 'timeout' : String(e) }; }
 }
 
-// call an external grounding service and normalize its reply
 async function viaEndpoint(url, question) {
   const res = await fetch(`${url.replace(/\/+$/, '')}/api/ask`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -30,43 +30,57 @@ async function viaEndpoint(url, question) {
   if (!res.ok) throw new Error('endpoint ' + res.status);
   const d = await res.json();
   return {
-    answer: d.text || d.answer || '',
-    refused: !!d.abstained || !!d.refused,
-    reason: d.abstain_reason || d.reason || null,
-    score: typeof d.top_rerank_score === 'number' ? d.top_rerank_score : null,
+    answer: d.text || d.answer || '', refused: !!d.abstained || !!d.refused,
+    reason: d.abstain_reason || d.reason || null, score: typeof d.top_rerank_score === 'number' ? d.top_rerank_score : null,
     citations: (d.citations || []).map((c) => ({ label: c.citation || c.label, source: c.pub_id || c.source, page: c.page_printed || c.page })),
     via: 'endpoint',
   };
 }
 
-// simple keyword ranking so the local path has zero heavy dependencies
-function rank(question, passages, k) {
-  const terms = new Set(question.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 2));
-  return passages
-    .map((p) => { const text = typeof p === 'string' ? p : p.text; const src = typeof p === 'string' ? '' : (p.source || p.cite || ''); const words = text.toLowerCase(); let s = 0; terms.forEach((t) => { if (words.includes(t)) s++; }); return { text, source: src, score: s }; })
-    .filter((r) => r.score > 0).sort((a, b) => b.score - a.score).slice(0, k);
-}
-
-async function viaPassages(question, passages, k) {
-  const top = rank(question, passages, k);
-  if (!top.length) return { answer: "I can't answer that from the provided sources — nothing supports it.", refused: true, reason: 'not_in_sources', citations: [], via: 'passages' };
+async function viaRetriever(question, retriever, k, history) {
+  const top = await retriever(question, k);
+  if (!top.length) return { answer: "I can't answer that from the provided sources — nothing supports it.", refused: true, reason: 'not_in_sources', citations: [], via: 'retriever', passages: [] };
   const ctx = top.map((r, i) => `[${i + 1}] ${r.source ? '(' + r.source + ') ' : ''}${r.text}`).join('\n\n');
+  const convo = history?.length ? `Conversation so far:\n${history.map((h) => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.text}`).join('\n')}\n\n` : '';
   const sys = 'Answer ONLY from the provided passages. Cite passage numbers like [1]. If they do not support an answer, output {"refused":true}. Output JSON only: {"refused":false,"answer":"...","used":[1,2]}';
-  const out = await chat(sys, `Passages:\n${ctx}\n\nQuestion: ${question}`);
-  if (out.error || out.refused) return { answer: "I can't answer that from the provided sources.", refused: true, reason: out.error || 'unsupported', citations: [], via: 'passages' };
+  const out = await chat(sys, `${convo}Passages:\n${ctx}\n\nQuestion: ${question}`);
+  if (out.error || out.refused) return { answer: "I can't answer that from the provided sources.", refused: true, reason: out.error || 'unsupported', citations: [], via: 'retriever', passages: top };
   const used = (out.used || []).map((n) => top[n - 1]).filter(Boolean);
   const cite = used.length ? used : top.slice(0, 2);
-  return { answer: out.answer, refused: false, reason: null, citations: cite.map((r) => ({ label: r.source || 'source', source: r.source, page: null })), via: 'passages' };
+  return { answer: out.answer, refused: false, reason: null, citations: cite.map((r) => ({ label: r.source || 'source', source: r.source, page: null })), via: 'retriever', passages: cite };
 }
 
 /**
  * Ask a grounded question.
  * @param {string} question
- * @param {{ endpoint?: string, passages?: (string|{text,source?})[], k?: number }} opts
+ * @param {{
+ *   endpoint?: string,
+ *   passages?: (string|{text,source?})[],
+ *   retriever?: (q:string,k:number)=>Promise<{text,source,score}[]>,
+ *   k?: number,
+ *   history?: {role:'user'|'assistant', text:string}[],
+ *   verify?: boolean | 'strict'   // check the answer against its sources; 'strict' refuses if unfaithful
+ * }} [opts]
  */
 export async function ask(question, opts = {}) {
   const endpoint = opts.endpoint || process.env.SOURCERER_GROUNDING_URL;
-  if (endpoint) { try { return await viaEndpoint(endpoint, question); } catch { /* fall through if passages given */ } }
-  if (opts.passages?.length) return viaPassages(question, opts.passages, opts.k || 5);
-  return { answer: 'No grounding configured — pass { endpoint } or { passages }.', refused: true, reason: 'no_grounding', citations: [] };
+  let result;
+  if (endpoint) { try { result = await viaEndpoint(endpoint, question); } catch { /* fall through */ } }
+  if (!result) {
+    const retriever = opts.retriever || (opts.passages?.length ? keywordRetriever(opts.passages) : null);
+    if (!retriever) return { answer: 'No grounding configured — pass { endpoint }, { passages }, or { retriever }.', refused: true, reason: 'no_grounding', citations: [] };
+    result = await viaRetriever(question, retriever, opts.k || 5, opts.history);
+  }
+
+  if (opts.verify && !result.refused && result.passages?.length) {
+    const check = await verifyFaithfulness(question, result.answer, result.passages);
+    result.faithfulness = check;
+    if (opts.verify === 'strict' && !check.faithful) {
+      return { ...result, answer: "I can't give a fully supported answer from these sources.", refused: true, reason: 'unfaithful', faithfulness: check };
+    }
+  }
+  return result;
 }
+
+export { keywordRetriever, embedRetriever } from './retrieve.js';
+export { verifyFaithfulness } from './verify.js';
