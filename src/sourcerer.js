@@ -22,19 +22,31 @@ async function chat(system, user, timeoutMs = 45000) {
   } catch (e) { return { error: e?.name === 'AbortError' ? 'timeout' : String(e) }; }
 }
 
+/**
+ * Normalize a grounding-service JSON body into Sourcerer's answer shape. Pure and side-effect free,
+ * so it accepts the several field spellings a service might use (`text`/`answer`, `abstained`/`refused`,
+ * `pub_id`/`source`, and so on) and always returns a stable, fully-populated object.
+ * @param {Record<string, any>} [d]
+ * @returns {{answer:string, refused:boolean, reason:(string|null), score:(number|null), citations:{label:any,source:any,page:any}[], via:'endpoint'}}
+ */
+export function normalizeEndpointResponse(d = {}) {
+  return {
+    answer: d.text || d.answer || '',
+    refused: !!d.abstained || !!d.refused,
+    reason: d.abstain_reason || d.reason || null,
+    score: typeof d.top_rerank_score === 'number' ? d.top_rerank_score : null,
+    citations: (d.citations || []).map((c) => ({ label: c.citation ?? c.label ?? null, source: c.pub_id ?? c.source ?? null, page: c.page_printed ?? c.page ?? null })),
+    via: 'endpoint',
+  };
+}
+
 async function viaEndpoint(url, question) {
   const res = await fetch(`${url.replace(/\/+$/, '')}/api/ask`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question }), signal: AbortSignal.timeout(45000),
   });
   if (!res.ok) throw new Error('endpoint ' + res.status);
-  const d = await res.json();
-  return {
-    answer: d.text || d.answer || '', refused: !!d.abstained || !!d.refused,
-    reason: d.abstain_reason || d.reason || null, score: typeof d.top_rerank_score === 'number' ? d.top_rerank_score : null,
-    citations: (d.citations || []).map((c) => ({ label: c.citation || c.label, source: c.pub_id || c.source, page: c.page_printed || c.page })),
-    via: 'endpoint',
-  };
+  return normalizeEndpointResponse(await res.json());
 }
 
 async function viaRetriever(question, retriever, k, history) {
@@ -63,6 +75,9 @@ async function viaRetriever(question, retriever, k, history) {
  * }} [opts]
  */
 export async function ask(question, opts = {}) {
+  if (typeof question !== 'string' || !question.trim()) {
+    return { answer: 'Ask a non-empty question (string).', refused: true, reason: 'no_question', citations: [] };
+  }
   const endpoint = opts.endpoint || process.env.SOURCERER_GROUNDING_URL;
   let result;
   if (endpoint) { try { result = await viaEndpoint(endpoint, question); } catch { /* fall through */ } }

@@ -4,9 +4,9 @@
   "description": "Ask your documents. Get a cited answer — or an honest \"not in the source.\"",
   "license": "Apache-2.0",
   "type": "module",
-  "main": "src/sourcerer.js",
+  "main": "src/index.js",
   "exports": {
-    ".": "./src/sourcerer.js"
+    ".": "./src/index.js"
   },
   "keywords": [
     "rag",

@@ -6,8 +6,13 @@ const tokens = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ')
 
 const asPassage = (p) => (typeof p === 'string' ? { text: p, source: '' } : { text: p.text, source: p.source || p.cite || '' });
 
-/** Zero-dependency keyword overlap retriever. Good default; no model calls. */
+/**
+ * Zero-dependency keyword-overlap retriever. Good default; no model calls.
+ * @param {(string|{text:string, source?:string, cite?:string})[]} passages
+ * @returns {(question:string, k?:number)=>Promise<{text:string, source:string, score:number}[]>}
+ */
 export function keywordRetriever(passages) {
+  if (!Array.isArray(passages)) throw new TypeError('keywordRetriever(passages): passages must be an array');
   const docs = passages.map(asPassage);
   return async (question, k = 5) => {
     const q = new Set(tokens(question));
@@ -28,8 +33,11 @@ function cosine(a, b) {
 /**
  * Semantic retriever backed by any OpenAI-compatible /embeddings endpoint. Embeddings for the
  * passages are computed once and cached. Falls back to keyword ranking if embeddings are unavailable.
+ * @param {{passages:(string|{text:string, source?:string})[], endpoint?:string, model?:string, apiKey?:string}} opts
+ * @returns {(question:string, k?:number)=>Promise<{text:string, source:string, score:number}[]>}
  */
 export function embedRetriever({ passages, endpoint, model, apiKey } = {}) {
+  if (!Array.isArray(passages)) throw new TypeError('embedRetriever({ passages }): passages must be an array');
   const docs = passages.map(asPassage);
   const url = endpoint || process.env.SOURCERER_EMBED_ENDPOINT || 'https://api.openai.com/v1/embeddings';
   const mdl = model || process.env.SOURCERER_EMBED_MODEL || 'text-embedding-3-small';

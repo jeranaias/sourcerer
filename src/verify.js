@@ -20,8 +20,27 @@ async function chat(system, user, timeoutMs = 45000) {
 }
 
 /**
- * Check whether an answer is supported by the passages it was drawn from.
+ * Reduce a fact-checker's per-claim verdicts into a faithfulness summary. Pure and side-effect free.
+ * @param {{claim?:string, supported?:boolean}[]} [claims]
+ * @param {string[]} [unsupportedInput] - explicit list of unsupported claims, if the checker provided one
  * @returns {{ faithful: boolean, unsupported: string[], score: number }}
+ */
+export function summarizeFaithfulness(claims = [], unsupportedInput) {
+  const unsupported = Array.isArray(unsupportedInput)
+    ? unsupportedInput
+    : claims.filter((c) => !c.supported).map((c) => c.claim);
+  const score = claims.length
+    ? claims.filter((c) => c.supported).length / claims.length
+    : (unsupported.length ? 0 : 1);
+  return { faithful: unsupported.length === 0, unsupported, score: Math.round(score * 100) / 100 };
+}
+
+/**
+ * Check whether an answer is supported by the passages it was drawn from.
+ * @param {string} question
+ * @param {string} answer
+ * @param {(string|{text:string})[]} passages
+ * @returns {Promise<{ faithful: boolean, unsupported: string[], score: number, error?: string }>}
  */
 export async function verifyFaithfulness(question, answer, passages) {
   if (!answer || !passages?.length) return { faithful: false, unsupported: [], score: 0 };
@@ -29,8 +48,5 @@ export async function verifyFaithfulness(question, answer, passages) {
   const sys = 'You are a strict fact-checker. Break the ANSWER into its individual factual claims and, using ONLY the passages, mark each as supported or not. Do not use outside knowledge. Output JSON only: {"claims":[{"claim":"...","supported":true}],"unsupported":["..."]}';
   const r = await chat(sys, `Passages:\n${ctx}\n\nQuestion: ${question}\nAnswer: "${answer}"\n\nCheck it.`);
   if (r.error) return { faithful: false, unsupported: [], score: 0, error: r.error };
-  const claims = r.claims || [];
-  const unsupported = r.unsupported || claims.filter((c) => !c.supported).map((c) => c.claim);
-  const score = claims.length ? claims.filter((c) => c.supported).length / claims.length : (unsupported.length ? 0 : 1);
-  return { faithful: unsupported.length === 0, unsupported, score: Math.round(score * 100) / 100 };
+  return summarizeFaithfulness(r.claims || [], r.unsupported);
 }

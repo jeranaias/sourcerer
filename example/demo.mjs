@@ -1,8 +1,12 @@
-// SOURCERER_API_KEY=... node example/demo.mjs
-import { ask } from '../src/sourcerer.js';
+// Grounded Q&A over a tiny document set. No key needed for the refusal path;
+// set SOURCERER_API_KEY to see a real cited answer.
+//   SOURCERER_API_KEY=... node example/demo.mjs
+import { ask } from '../src/index.js';
+
 const passages = [
-  { text: 'Sight alignment is the relationship between the rear aperture, the front sight post, and the aiming eye.', source: 'Marksmanship, Ch.7' },
-  { text: 'A pace count is the number of paces it takes to walk 100 meters.', source: 'Land Nav, Ch.9' },
+  { text: 'Standard shipping takes 3 to 5 business days within the continental United States.', source: 'Shipping Policy' },
+  { text: 'Returns are accepted within 30 days of delivery for a full refund on unused items.', source: 'Returns Policy' },
 ];
-console.log('Q1:', JSON.stringify(await ask('What is sight alignment?', { passages }), null, 2));
-console.log('Q2 (out of scope):', JSON.stringify(await ask('What is the range of a Javelin?', { passages }), null, 2));
+
+console.log('Q1:', JSON.stringify(await ask('How long does standard shipping take?', { passages }), null, 2));
+console.log('Q2 (out of scope):', JSON.stringify(await ask('Do you offer a lifetime warranty?', { passages }), null, 2));

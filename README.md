@@ -12,14 +12,14 @@ don't support an answer, and it can **check its own answer against those sources
 import { ask } from 'sourcerer';
 
 const passages = [
-  { text: 'Sight alignment is the relationship between the rear aperture, the front post, and the eye.', source: 'Marksmanship, Ch.7' },
-  { text: 'A pace count is the number of paces to walk 100 meters.', source: 'Land Nav, Ch.9' },
+  { text: 'Standard shipping takes 3 to 5 business days within the continental United States.', source: 'Shipping Policy' },
+  { text: 'Returns are accepted within 30 days of delivery for a full refund on unused items.', source: 'Returns Policy' },
 ];
 
-await ask('What is sight alignment?', { passages });
-// → { answer: 'Sight alignment is… [1]', refused: false, citations: [{ label: 'Marksmanship, Ch.7' }] }
+await ask('How long does standard shipping take?', { passages });
+// → { answer: 'Standard shipping takes 3 to 5 business days… [1]', refused: false, citations: [{ label: 'Shipping Policy' }] }
 
-await ask('What is the range of a Javelin?', { passages });
+await ask('Do you offer a lifetime warranty?', { passages });
 // → { answer: "I can't answer that from the provided sources — nothing supports it.",
 //     refused: true, reason: 'not_in_sources' }
 ```
@@ -30,7 +30,7 @@ await ask('What is the range of a Javelin?', { passages });
 breaks its own answer into claims and confirms each is actually supported by the retrieved passages:
 
 ```js
-const res = await ask('What is sight alignment?', { passages, verify: true });
+const res = await ask('How long does standard shipping take?', { passages, verify: true });
 res.faithfulness; // → { faithful: true, unsupported: [], score: 1 }
 
 // 'strict' turns an unfaithful answer into a refusal automatically
@@ -75,7 +75,11 @@ await ask(question, { retriever });
 Pass prior turns and follow-ups stay grounded:
 
 ```js
-await ask('And what about sight picture?', { passages, history });
+const history = [
+  { role: 'user', text: 'How long does standard shipping take?' },
+  { role: 'assistant', text: 'Standard shipping takes 3 to 5 business days. [1]' },
+];
+await ask('And what about returns?', { passages, history });
 ```
 
 ## The answer shape
