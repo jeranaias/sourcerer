@@ -37,13 +37,23 @@ res.faithfulness; // → { faithful: true, unsupported: [], score: 1 }
 await ask(question, { passages, verify: 'strict' });
 ```
 
+Verification checks the answer against the passage **text** it was drawn from, so it needs
+`{ passages }` or `{ retriever }`. A grounding `{ endpoint }` returns citations without passage
+text, so `verify` on that path throws rather than silently pretending the answer was checked.
+
 ## Three ways to ground it
 
 **Passages** (zero-infrastructure) — hand it `{ text, source }[]` and it retrieves + answers:
 
 ```js
-await ask(question, { passages, k: 5 });
+await ask(question, { passages, k: 5, minScore: 0.2 });
 ```
+
+`k` must be a positive integer. `minScore` (default `0.2`) is a retrieval floor: if the best passage
+scores below it, Sourcerer refuses (`reason: 'below_threshold'`) rather than answer off a single
+common-word overlap. And a cited answer is enforced, not requested — the model must both list the
+passages it used and carry a matching inline `[n]` marker, or the answer is refused
+(`reason: 'no_citation'`). Citations are never fabricated from the top passages.
 
 **Your own retriever** — anything `async (question, k) => [{ text, source, score }]`:
 
@@ -62,7 +72,8 @@ await ask(question, { endpoint: 'http://localhost:7700' });   // or SOURCERER_GR
 
 Ships with a zero-dependency keyword retriever (the default) and a semantic one backed by any
 OpenAI-compatible `/embeddings` endpoint — embeddings are computed once and cached, and it falls back
-to keyword if embeddings are unavailable:
+to keyword if embeddings are unavailable. The keyword tokenizer is Unicode-aware, so Arabic, CJK, and
+accented-Latin sources retrieve correctly:
 
 ```js
 import { embedRetriever } from 'sourcerer';
@@ -94,6 +105,11 @@ await ask('And what about returns?', { passages, history });
   "via": "retriever"
 }
 ```
+
+`reason` names why an answer was refused: `not_in_sources` (nothing retrieved), `below_threshold`
+(top match under `minScore`), `no_citation` (the model gave no valid, in-range, inline-marked
+citation), `unsupported` (the model declined), `unfaithful` (failed strict verification),
+`no_question`, `bad_k`, or `no_grounding`.
 
 ## Install & test
 

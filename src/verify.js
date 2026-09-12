@@ -26,9 +26,15 @@ async function chat(system, user, timeoutMs = 45000) {
  * @returns {{ faithful: boolean, unsupported: string[], score: number }}
  */
 export function summarizeFaithfulness(claims = [], unsupportedInput) {
-  const unsupported = Array.isArray(unsupportedInput)
+  const hasExplicit = Array.isArray(unsupportedInput);
+  const unsupported = hasExplicit
     ? unsupportedInput
     : claims.filter((c) => !c.supported).map((c) => c.claim);
+  // Fail closed: with no claims to check and no explicit verdict list, verification could not run —
+  // that is "cannot verify," not "verified faithful." Never report unchecked answers as faithful.
+  if (!claims.length && !hasExplicit) {
+    return { faithful: false, unsupported: [], score: 0 };
+  }
   const score = claims.length
     ? claims.filter((c) => c.supported).length / claims.length
     : (unsupported.length ? 0 : 1);
@@ -40,13 +46,14 @@ export function summarizeFaithfulness(claims = [], unsupportedInput) {
  * @param {string} question
  * @param {string} answer
  * @param {(string|{text:string})[]} passages
+ * @param {(system:string, user:string)=>Promise<Record<string,any>>} [chatFn] - injectable model call, for tests
  * @returns {Promise<{ faithful: boolean, unsupported: string[], score: number, error?: string }>}
  */
-export async function verifyFaithfulness(question, answer, passages) {
+export async function verifyFaithfulness(question, answer, passages, chatFn = chat) {
   if (!answer || !passages?.length) return { faithful: false, unsupported: [], score: 0 };
   const ctx = passages.map((p, i) => `[${i + 1}] ${typeof p === 'string' ? p : p.text}`).join('\n\n');
   const sys = 'You are a strict fact-checker. Break the ANSWER into its individual factual claims and, using ONLY the passages, mark each as supported or not. Do not use outside knowledge. Output JSON only: {"claims":[{"claim":"...","supported":true}],"unsupported":["..."]}';
-  const r = await chat(sys, `Passages:\n${ctx}\n\nQuestion: ${question}\nAnswer: "${answer}"\n\nCheck it.`);
+  const r = await chatFn(sys, `Passages:\n${ctx}\n\nQuestion: ${question}\nAnswer: "${answer}"\n\nCheck it.`);
   if (r.error) return { faithful: false, unsupported: [], score: 0, error: r.error };
   return summarizeFaithfulness(r.claims || [], r.unsupported);
 }

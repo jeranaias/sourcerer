@@ -2,7 +2,10 @@
 // and you can pass your own — any `async (question, k) => [{ text, source, score }]` works.
 
 const STOP = new Set('a an the of to and or in on for with by is are be as at from that this it its'.split(' '));
-const tokens = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !STOP.has(w));
+// Unicode-aware: keep letters/numbers of any script (Arabic, CJK, accented Latin), strip the rest.
+// Short ASCII noise is dropped, but non-ASCII tokens (where a single glyph can carry meaning) are kept.
+const tokens = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').split(/\s+/)
+  .filter((w) => (w.length > 2 || /\P{ASCII}/u.test(w)) && !STOP.has(w));
 
 const asPassage = (p) => (typeof p === 'string' ? { text: p, source: '' } : { text: p.text, source: p.source || p.cite || '' });
 
